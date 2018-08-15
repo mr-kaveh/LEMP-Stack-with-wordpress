@@ -1,0 +1,219 @@
+---
+- name: LEMP Stack Installation for wordpress 
+  hosts: all
+  gather_facts: true
+  become: yes
+  become_user: root
+  vars:
+    mysql_root_password: passwd
+    mysql_old_root_password: passwd
+    mysql_socket: "/var/lib/mysql"
+
+  tasks:
+    - include: mariadb_install.yml
+    
+    - include : mariadb_secure_installation.yml
+      vars:
+        mysql_socket: "/var/lib/mysql"
+        mysql_root_password: passwd
+        mysql_old_root_password: passwd
+
+    - name: install the nginx rpm from a remote repo
+      yum:
+        name: http://nginx.org/packages/rhel/7/noarch/RPMS/nginx-release-rhel-7-0.el7.ngx.noarch.rpm 
+        state: present
+
+    - name: Install nginx
+      yum:
+        name: nginx
+        state: present
+      notify:
+      - systemctl restart nginx
+    
+    - name: Firewall Rule
+      firewalld:
+        service: https
+        permanent: true
+        state: enabled
+        immediate: true
+
+    - name: Install php-fpm
+      yum:
+        name: php-fpm
+        state: present
+
+    - name: Install php-mysql
+      yum:
+        name: php-mysql
+        state: present
+
+    - name: Install php-cli
+      yum:
+        name: php-cli
+        state: present
+
+    - name: copy php.ini
+      copy:
+        src: ../files/php.ini
+        dest: /etc/php.ini
+
+    - name: copy www.conf
+      copy:
+        src: ../files/www.conf
+        dest: /etc/php-fpm.d/www.conf
+    
+    - name: creating virtualHost
+      template: 
+        src: ../templates/virtual.conf.j2
+        dest: /etc/nginx/conf.d/virtual.conf
+ 
+    - name: declare hostname
+      debug:
+        msg: "{{ansible_hostname}}.{{ansible_domain}}"
+
+    - name: install phpmyadmin rpm from remote repo
+      yum:
+        name: https://dl.fedoraproject.org/pub/epel/epel-release-latest-7.noarch.rpm
+        state: present
+
+    - name: Install phpmyadmin
+      yum:
+        name: phpmyadmin
+        state: present
+    
+    - name: Install php
+      yum:
+        name: php
+        state: present
+ 
+    - name: Configure phpMyAdmin
+      template:
+        src: ../templates/phpMyAdmin.conf.j2
+        dest: /etc/nginx/conf.d/phpmyadmin.conf
+      notify:
+      - systemctl restart nginx
+      - systemctl restart php-fpm
+
+#    - name: create Wordpress directory
+#      file: 
+#        path: /usr/share/nginx/wordpress.{{ansible_domain}}
+#        state: directory
+#        owner: nginx
+#        group: nginx
+#
+#    - name: create Wordpress logs directory
+#      file: 
+#        path: /usr/share/nginx/wordpress.{{ansible_domain}}/logs
+#        state: directory
+#        owner: nginx
+#        group: nginx
+
+#    - name: access Log file
+#      file:
+#        path: /usr/share/nginx/wordpress.{{ansible_domain}}/logs/access.log
+#        state: touch
+#        owner: nginx
+#        group: nginx
+
+#    - name: error Log file
+#      file:
+#        path: /usr/share/nginx/wordpress.{{ansible_domain}}/logs/error.log
+#        state: touch
+#        owner: nginx
+#        group: nginx
+
+    - name: Configure wordpress
+      template:
+        src: ../templates/wordpress.conf.j2
+        dest: /etc/nginx/conf.d/wordpress.conf
+      notify:
+      - systemctl restart nginx
+      - systemctl restart php-fpm
+
+    - name: Create wordpress database
+      mysql_db:
+        login_user: root
+        login_password: "{{mysql_root_password}}"
+        name: wordpress
+        state: present 
+
+    - name: create mariadb user
+      mysql_user:
+        login_user: root
+        login_password: "{{mysql_root_password}}"
+        name: wpuser
+        password: wppassword
+        host: localhost
+        state: present
+        priv: 'wordpress.*:ALL'
+
+    - name: download wordpress latest.tar.gz
+      get_url:
+        url: http://wordpress.org/latest.tar.gz
+        dest: /tmp/latest.tar.gz
+    
+    - name: Extract latest.tar.gz into /usr/share/nginx/wordpress
+      unarchive:
+        src: /tmp/latest.tar.gz
+        dest: /usr/share/nginx/
+        remote_src: yes
+        owner: nginx
+        group: nginx
+    
+    - name: rename /usr/share/nginx/wordpress to /usr/share/nginx/wordpress.{{ansible_domain}}
+      command: mv /usr/share/nginx/wordpress /usr/share/nginx/wordpress.{{ansible_domain}}
+      
+    
+    - name: create Wordpress logs directory
+      file: 
+        path: /usr/share/nginx/wordpress.{{ansible_domain}}/logs
+        state: directory
+        owner: nginx
+
+    - name: access Log file
+      file:
+        path: /usr/share/nginx/wordpress.{{ansible_domain}}/logs/access.log
+        state: touch
+        owner: nginx
+
+    - name: error Log file
+      file:
+        path: /usr/share/nginx/wordpress.{{ansible_domain}}/logs/error.log
+        state: touch
+        owner: nginx
+
+    
+    - name: /usr/share/nginx/wordpress.{{ansible_domain}}/ permission set
+      file:
+        path: /usr/share/nginx/wordpress.{{ansible_domain}}
+        recurse: true
+        owner: nginx
+        group: nginx   
+
+    - name: wp-config.php
+      copy: 
+        src: ../files/wp-config.php 
+        dest: /usr/share/nginx/wordpress.{{ansible_domain}}/wp-config.php
+      notify:
+      - systemctl restart nginx
+    
+    
+
+  handlers:
+    - name: systemctl start mariadb
+      service:
+        name: mariadb
+        state: started
+        enabled: true
+
+    - name: systemctl restart nginx
+      service:
+        name: nginx
+        state: restarted
+        enabled: true
+
+    - name: systemctl restart php-fpm
+      service:
+        name: php-fpm
+        state: restarted
+        enabled: true
