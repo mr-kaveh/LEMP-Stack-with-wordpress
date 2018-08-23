@@ -7,7 +7,7 @@
   yum:
     name: mariadb-server
     state: present
-- name: mariadb service initialize
-  service:
-    name: mariadb
-    state: restarted
+#- name: mariadb service initialize
+#  service:
+#    name: mariadb
+#    state: restarted
