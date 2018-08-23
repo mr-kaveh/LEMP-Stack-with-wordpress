@@ -18,6 +18,3 @@
       template:
         src: ../templates/phpMyAdmin.conf.j2
         dest: /etc/nginx/conf.d/phpmyadmin.conf
-#      notify:
-#      - systemctl restart nginx
-#      - systemctl restart php-fpm
